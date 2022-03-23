@@ -1,33 +1,33 @@
 {
   "player": [
     {
-      "name": "Player 1",
+      "name": "",
       "tag": "",
-      "character": "Elliana",
+      "character": "Forsburn",
       "skin": "Default"
     },
     {
-      "name": "Player 2",
-      "tag": "Tag",
-      "character": "Kragg",
+      "name": "",
+      "tag": "",
+      "character": "Etalus",
       "skin": "Default"
     },
     {
-      "name": "Player 3",
-      "tag": "Tag",
-      "character": "Maypul",
-      "skin": "Arcade Pink"
+      "name": "",
+      "tag": "",
+      "character": "Random",
+      "skin": ""
     },
     {
-      "name": "Player 4",
+      "name": "",
       "tag": "",
-      "character": "Clairen",
-      "skin": "Arcade Green"
+      "character": "Random",
+      "skin": ""
     }
   ],
   "teamName": [
-    "Team 1 Name",
-    "Team 2 Name"
+    "",
+    ""
   ],
   "color": [
     "Red",
@@ -41,25 +41,25 @@
     "Nada",
     "Nada"
   ],
-  "bestOf": "Bo5",
+  "bestOf": "Bo3",
   "gamemode": 1,
-  "round": "Winners Finals",
-  "tournamentName": "A Tournament #123",
+  "round": "WR1",
+  "tournamentName": "CMAP",
   "caster": [
     {
-      "name": "Caster 1",
-      "twitter": "Twitter 1",
-      "twitch": "Twitch 1"
+      "name": "uuuu",
+      "twitter": "",
+      "twitch": ""
     },
     {
-      "name": "Caster 2",
-      "twitter": "Twitter 2",
-      "twitch": "Twitch 2"
+      "name": "uuuuu",
+      "twitter": "",
+      "twitch": ""
     }
   ],
   "allowIntro": false,
   "workshop": false,
-  "forceHD": true,
+  "forceHD": false,
   "noLoAHD": false,
-  "forceAlt": true
+  "forceAlt": false
 }
