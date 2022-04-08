@@ -7,10 +7,9 @@ const ipc = electron.ipcRenderer;
 
 // yes we all like global variables
 const textPath = __dirname + '/Texts';
-const charPathBase = __dirname + '/Characters';
+const charPath = __dirname + '/Characters';
 const charPathWork = __dirname + '/Characters/_Workshop';
 const charPathRandom = __dirname + '/Characters/Random';
-let charPath;
 
 const colorList = getJson(textPath + "/Color Slots");
 let colorL, colorR;
@@ -22,6 +21,7 @@ let currentBestOf = "Bo5";
 let gamemode = 1;
 
 let movedSettings = false;
+let charP1Active = false;
 
 let inPF = false;
 let currentFocus = -1;
@@ -39,17 +39,21 @@ const tNameInps = document.getElementsByClassName("teamName");
 //we want the correct order, we cant use getClassName here
 function pushArrayInOrder(array, string1, string2 = "") {
     for (let i = 0; i < maxPlayers; i++) {
-        array.push(document.getElementById(string1+(i+1)+string2));
+        let element = document.getElementById(string1+(i+1)+string2);
+        if (element !== null){
+            array.push(document.getElementById(string1+(i+1)+string2));
+        }
     }
 }
-const pNameInps = [], pTagInps = [], pFinders = [], charLists = [], skinLists = [];
+const pNameInps = [], pTagInps = [], pFinders = [], charLists = [], charDivLists = [], skinDivLists = [], skinLists = [], charImgs = [];
 pushArrayInOrder(pNameInps, "p", "Name");
 pushArrayInOrder(pTagInps, "p", "Tag");
 pushArrayInOrder(pFinders, "pFinder");
-pushArrayInOrder(charLists, "p", "Char");
-pushArrayInOrder(skinLists, "p", "Skin");
-
-const charImgs = document.getElementsByClassName("charImg");
+pushArrayInOrder(charLists, "p", "CharSelector");
+pushArrayInOrder(charDivLists, "p", "CharSelectorDiv");
+pushArrayInOrder(skinDivLists, "skinSelectorP", "");
+pushArrayInOrder(skinLists, "skinListP", "");
+pushArrayInOrder(charImgs, "p", "CharImg");
 
 const p1Win1 = document.getElementById('winP1-1');
 const p1Win2 = document.getElementById('winP1-2');
@@ -74,8 +78,6 @@ const tournamentInp = document.getElementById('tournamentName');
 
 const casters = document.getElementsByClassName("caster");
 
-const workshopCheck = document.getElementById('workshopToggle');
-const noLoAHDCheck = document.getElementById('noLoAHD');
 const forceWL = document.getElementById('forceWLToggle');
 
 
@@ -94,10 +96,6 @@ function init() {
 
     //set listeners for the settings checkboxes
     document.getElementById("allowIntro").addEventListener("click", saveGUISettings);
-    workshopCheck.addEventListener("click", workshopToggle);
-    document.getElementById("forceAlt").addEventListener("click", saveGUISettings);
-    document.getElementById('forceHD').addEventListener("click", HDtoggle);
-    document.getElementById("noLoAHD").addEventListener("click", saveGUISettings);
     forceWL.addEventListener("click", forceWLtoggle);
     document.getElementById("alwaysOnTop").addEventListener("click", alwaysOnTop);
     document.getElementById("copyMatch").addEventListener("click", copyMatch);
@@ -105,31 +103,26 @@ function init() {
     // load GUI settings
     const guiSettings = JSON.parse(fs.readFileSync(textPath + "/GUI Settings.json", "utf-8"));
     if (guiSettings.allowIntro) {document.getElementById("allowIntro").checked = true};
-    if (guiSettings.workshop) {workshopCheck.checked = true} else {
-        // disable alt arts checkbox
-        document.getElementById("forceAlt").disabled = true;
-    };
-    if (guiSettings.forceAlt) {document.getElementById("forceAlt").checked = true};
-    if (guiSettings.forceHD) {document.getElementById("forceHD").checked = true};
-    if (guiSettings.noLoAHD) {noLoAHDCheck.checked = true; noLoAHDCheck.disabled = false};
     if (guiSettings.forceWL) {forceWL.click()};
     if (guiSettings.alwaysOnTop) {document.getElementById("alwaysOnTop").click()};
 
 
     /* Overlay */
+    setSingles();
 
     //load color slot list and add the color background on each side
+
     loadColors();
 
-
-    // we need to set the current char path
-    workshopCheck.checked ? charPath = charPathWork : charPath = charPathBase;
-
     //load the character list for all players on startup
+
     loadCharacters();
 
+    createCharRoster();
+    document.getElementById('charRoster').addEventListener("click", hideChars);
+
     //set listeners that will trigger when character or skin changes
-    for (let i = 0; i < maxPlayers; i++) {
+    for (let i = 0; i < charLists.length; i++) {
         charLists[i].addEventListener("change", charChangeL);
         skinLists[i].addEventListener("change", skinChangeL);
     }
@@ -157,7 +150,8 @@ function init() {
 
 
     //for each player input field
-    for (let i = 0; i < maxPlayers; i++) {
+    // TODO: doubles
+    for (let i = 0; i < 2; i++) {
 
         //prepare the player finder (player presets)
         preparePF(i+1);
@@ -178,16 +172,12 @@ function init() {
     bo5Div.addEventListener("click", changeBestOf);
     //set initial value
     bo3Div.style.color = "var(--text2)";
-    bo5Div.style.backgroundImage = "linear-gradient(to top, #575757, #00000000)";
+    bo5Div.style.backgroundImage = "linear-gradient(to top, #0e3131, #0e3131)";
 
 
     //check if the round is grand finals
     roundInp.addEventListener("input", checkRound);
-
-
-    //gamemode button
-    document.getElementById("gamemode").addEventListener("click", changeGamemode);
-
+    
 
     //add a listener to the swap button
     document.getElementById('swapButton').addEventListener("click", swap);
@@ -291,47 +281,178 @@ function getJson(jPath) {
     }
 }
 
-
-//calls the main settings file and fills a combo list
 function loadCharacters() {
-
-    // create a list with folder names on charPath
-    const characterList = fs.readdirSync(charPath, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name)
-        .filter((name) => {
-            // if the folder name contains '_Workshop' or 'Random', exclude it
-            if (name != "_Workshop" && name != "Random") {
-                return true;
-            }
-        }
-    )
-
-    //for each player
-    for (let i=0; i < maxPlayers; i++) {
-
-        //use the character list to add entries
-        addEntries(charLists[i], characterList);
-
-        //add random to the end of the list
-        const option = document.createElement('option');
-        option.text = "Random";
-        charLists[i].add(option);
-
-        //leave it selected
-        charLists[i].selectedIndex = charLists[i].length - 1;
-
-        //update the image to random, only for the first 2 players
-        for (let i = 0; i < 2; i++) {
-            charImgChange(charImgs[i], "Random");       
-        }
-
-        //change the width to the current text
-        changeListWidth(charLists[i]);
+    //for each player 
+    console.log(charLists.length);
+    for (let i=0; i < charLists.length; i++) {
+        console.log(i);
+        charLists[i].setAttribute('src', charPath + '/Random/CSS.png');
+        charLists[i].setAttribute('title', 'Random');
+        charLists[i].addEventListener("click", openChars);
+        // TODO: Update to use list of skins
+        charImgChange(charImgs[i], "Random", "Random Blue");
     }
-
 }
 
+
+//whenever we click on the character change button
+function openChars() {
+    let pnum = this.id.substring(this.id.search(/p[0-9]/i) + 1, this.id.search(/p[0-9]/i) + 2);
+    document.getElementById('charRoster').setAttribute('title', pnum);
+
+    document.getElementById('charRoster').style.display = "flex"; //show the thing
+    setTimeout( () => { //right after, change opacity and scale
+        document.getElementById('charRoster').style.opacity = 1;
+        document.getElementById('charRoster').style.transform = "scale(1)";
+    }, 0);
+}
+
+//to hide the character grid
+function hideChars() {
+    document.getElementById('charRoster').style.opacity = 0;
+    document.getElementById('charRoster').style.transform = "scale(1.2)";
+    setTimeout(() => {
+        document.getElementById('charRoster').style.display = "none";
+    }, 200);
+}
+
+//called whenever clicking an image in the character roster
+function changeCharacter() {
+    let pnum = document.getElementById('charRoster').title;
+    charLists[pnum - 1].setAttribute('title', this.id);
+    charLists[pnum - 1].setAttribute('src', charPath + '/' + this.id + '/CSS.png');
+
+    // TODO: Get list of skins from char info
+    charImgChange(charImgs[pnum - 1], this.id, `${this.id} (1)`);
+    addSkinIcons(pnum);
+}
+
+//same as above but for the swap button
+function changeCharacterManual(char, pNum) {
+    let tempP1Char;
+    let tempP1Skin;
+
+    document.getElementById('p'+pNum+'CharSelector').setAttribute('src', charPath + '/' + char + '/CSS.png');
+    if (pNum == 1) {
+        charP1 = char;
+        skinP1 = `${charP1} (1)`;
+        charImgChange(charImgP1, char);
+        addSkinIcons(1);
+    } else {
+        charP2 = char;
+        skinP2 = `${charP2} (1)`;
+        charImgChange(charImgP2, char);
+        addSkinIcons(2);
+    }
+}
+
+//also called when we click those images
+function addSkinIcons(pNum) {
+    document.getElementById('skinListP'+pNum).innerHTML = ''; //clear everything before adding
+
+    // TODO: Here is ex for skin info
+    let charInfo = getJson(charPath + '/' + charLists[pNum - 1].title + '/_Info');
+    if (charInfo != undefined) { //if character doesnt have a list (for example: Random), skip this
+        //add an image for every skin on the list
+        for (let i = 0; i < charInfo.skinList.length; i++) {
+
+            let newImg = document.createElement('img');
+            newImg.className = "skinIcon";
+            newImg.id = 'p' + pNum + ' ' + charLists[pNum - 1].title;
+            newImg.title = charInfo.skinList[i];
+
+            newImg.setAttribute('src', charPath + '/' + charLists[pNum - 1].title + '/Stocks/' +charInfo.skinList[i] + '.png');
+            newImg.addEventListener("click", changeSkinListener);
+
+            document.getElementById('skinListP'+pNum).appendChild(newImg);
+        }
+       
+    }
+
+    //if the list only has 1 skin or none, hide the skin list
+    if (document.getElementById('skinListP'+pNum).children.length <= 1) {
+        document.getElementById('skinSelectorP'+pNum).style.opacity = 0;
+    } else {
+        document.getElementById('skinSelectorP'+pNum).style.opacity = 1;
+    }
+}
+//whenever clicking on the skin images
+function changeSkinListener() {
+    let pNum = this.id.substring(this.id.search(/p[0-9]/i) + 1, this.id.search(/p[0-9]/i) + 2);
+    let char = this.id.substring(this.id.search(/p[0-9]/i) + 3);
+    charImgChange(charImgs[pNum-1], char, this.title);
+}
+
+function createCharRoster() {
+    //checks the character list which we use to order stuff
+    const guiSettings = getJson(textPath + "/InterfaceInfo");
+    //first row
+    for (let i = 0; i < 9; i++) {
+        let newImg = document.createElement('img');
+        newImg.className = "charInRoster";
+        newImg.setAttribute('src', charPath + '/' + guiSettings.charactersBase[i] + '/CSS.png');
+
+        newImg.id = guiSettings.charactersBase[i]; //we will read this value later
+        newImg.addEventListener("click", changeCharacter);
+
+        document.getElementById("rosterLine1").appendChild(newImg);
+    }
+    //second row
+    for (let i = 9; i < 17; i++) {
+        let newImg = document.createElement('img');
+        newImg.className = "charInRoster";
+
+        newImg.id = guiSettings.charactersBase[i];
+        newImg.addEventListener("click", changeCharacter);
+
+        newImg.setAttribute('src', charPath + '/' + guiSettings.charactersBase[i] + '/CSS.png');
+        document.getElementById("rosterLine2").appendChild(newImg);
+    }
+    //third row
+    for (let i = 17; i < 26; i++) {
+        let newImg = document.createElement('img');
+        newImg.className = "charInRoster";
+
+        newImg.id = guiSettings.charactersBase[i];
+        newImg.addEventListener("click", changeCharacter);
+
+        newImg.setAttribute('src', charPath + '/' + guiSettings.charactersBase[i] + '/CSS.png');
+        document.getElementById("rosterLine3").appendChild(newImg);
+    }
+    //fourth row
+    for (let i = 26; i < 34; i++) {
+        let newImg = document.createElement('img');
+        newImg.className = "charInRoster";
+
+        newImg.id = guiSettings.charactersBase[i];
+        newImg.addEventListener("click", changeCharacter);
+
+        newImg.setAttribute('src', charPath + '/' + guiSettings.charactersBase[i] + '/CSS.png');
+        document.getElementById("rosterLine4").appendChild(newImg);
+    }
+    //fifth row
+    for (let i = 34; i < 43; i++) {
+        let newImg = document.createElement('img');
+        newImg.className = "charInRoster";
+
+        newImg.id = guiSettings.charactersBase[i];
+        newImg.addEventListener("click", changeCharacter);
+
+        newImg.setAttribute('src', charPath + '/' + guiSettings.charactersBase[i] + '/CSS.png');
+        document.getElementById("rosterLine5").appendChild(newImg);
+    }
+    //sixth row
+    for (let i = 43; i < 45; i++) {
+        let newImg = document.createElement('img');
+        newImg.className = "charInRoster";
+
+        newImg.id = guiSettings.charactersBase[i];
+        newImg.addEventListener("click", changeCharacter);
+
+        newImg.setAttribute('src', charPath + '/' + guiSettings.charactersBase[i] + '/CSS.png');
+        document.getElementById("rosterLine6").appendChild(newImg);
+    }
+}
 
 //called whenever we want to change the character
 function charChange(list) {
@@ -415,7 +536,8 @@ function skinChangeL() {
 
 //change the image path depending on the character and skin
 function charImgChange(charImg, charName, skinName) {
-    charImg.setAttribute('src', charPath + '/' + charName + '/' + skinName + '.png');
+    charImg.setAttribute('title', skinName);
+    charImg.setAttribute('src', charPath + '/' + charName + '/Renders/' + skinName + '.png');
 }
 
 //will load the skin list of a given character
@@ -899,7 +1021,7 @@ function changeBestOf() {
 
     //change the color and background of the buttons
     this.style.color = "var(--text1)";
-    this.style.backgroundImage = "linear-gradient(to top, #575757, #00000000)";
+    this.style.backgroundImage = "linear-gradient(to top, #0e3131, #0e3131)";
     theOtherBestOf.style.color = "var(--text2)";
     theOtherBestOf.style.backgroundImage = "var(--bg4)";
 }
@@ -921,139 +1043,131 @@ function checkRound() {
     }
 }
 
+function setSingles() {
+    //show doubles icon
+    gmIcon2.style.opacity = 1;
+    gmIcon1.style.left = "4px";
+    gmIcon2.style.left = "17px";
 
-//called when clicking on the gamemode icon, cycles through singles and doubles
-function changeGamemode() {
+    //remove color button margin, change border radius
+    const lColor = document.getElementById("lColor");
+    lColor.style.marginLeft = "0px";
+    lColor.style.borderTopLeftRadius = "0px";
+    lColor.style.borderBottomLeftRadius = "0px";
+    const rColor = document.getElementById("rColor");
+    rColor.style.marginLeft = "0px";
+    rColor.style.borderTopLeftRadius = "0px";
+    rColor.style.borderBottomLeftRadius = "0px";        
 
-    //things are about to get messy
-    if (gamemode == 1) {
-        
-        gamemode = 2;
-
-        //show singles icon
-        gmIcon2.style.opacity = 0;
-        gmIcon1.style.left = "11px"; 
-        
-        //hide the background character image to reduce clutter
-        charImgs[0].style.opacity = 0;
-        charImgs[1].style.opacity = 0;
-
-        //add some margin to the color buttons, change border radius
-        const lColor = document.getElementById("lColor");
-        lColor.style.marginLeft = "5px";
-        lColor.style.borderTopLeftRadius = "3px";
-        lColor.style.borderBottomLeftRadius = "3px";
-        const rColor = document.getElementById("rColor");
-        rColor.style.marginLeft = "5px";
-        rColor.style.borderTopLeftRadius = "3px";
-        rColor.style.borderBottomLeftRadius = "3px";
-
-        for (let i = 1; i < 3; i++) {
-            document.getElementById("row1-"+i).insertAdjacentElement("afterbegin", wlButtons[i-1]);
-            document.getElementById("row1-"+i).insertAdjacentElement("afterbegin", document.getElementById('scoreBox'+i));
-            
-            document.getElementById("scoreText"+i).style.display = "none";
-
-            tNameInps[i-1].style.display = "block";
-
-            document.getElementById("row1-"+i).insertAdjacentElement("afterbegin", tNameInps[i-1]);
-
-            document.getElementById('row2-'+i).insertAdjacentElement("beforeend", document.getElementById('pInfo'+i));
-
-            charLists[i+1].style.display = "block";
-            if (skinLists[i+1].options.length <= 1) {
-                skinLists[i+1].style.display = "none";
-            } else {
-                skinLists[i+1].style.display = "block";
-            }
-
-            document.getElementById('pInfo'+(i+2)).style.display = "block";
-        }
-
-        //add some left margin to the name/tag inputs, add border radius, change max width
-        for (let i = 0; i < maxPlayers; i++) {
-            pTagInps[i].style.marginLeft = "5px";
-
-            pNameInps[i].style.borderTopRightRadius = "3px";
-            pNameInps[i].style.borderBottomRightRadius = "3px";
-
-            pTagInps[i].style.maxWidth = "45px"
-            pNameInps[i].style.maxWidth = "94px"
-            
-            charLists[i].style.maxWidth = "65px";
-            skinLists[i].style.maxWidth = "65px";
-        }
-
-
-        //change the hover tooltip
-        this.setAttribute('title', "Change the gamemode to Singles");
-
-        //dropdown menus for the right side will now be positioned to the right
-        for (let i = 1; i < 5; i+=2) {
-            pFinders[i].style.right = "0px";
-            pFinders[i].style.left = "";
-        }
-        document.getElementById("dropdownColorR").style.right = "0px";
-        document.getElementById("dropdownColorR").style.left = "";
-
-    } else if (gamemode == 2) {
-
-        gamemode = 1;
-
-        //show doubles icon
-        gmIcon2.style.opacity = 1;
-        gmIcon1.style.left = "4px";
-        gmIcon2.style.left = "17px";
-
-        //remove color button margin, change border radius
-        const lColor = document.getElementById("lColor");
-        lColor.style.marginLeft = "0px";
-        lColor.style.borderTopLeftRadius = "0px";
-        lColor.style.borderBottomLeftRadius = "0px";
-        const rColor = document.getElementById("rColor");
-        rColor.style.marginLeft = "0px";
-        rColor.style.borderTopLeftRadius = "0px";
-        rColor.style.borderBottomLeftRadius = "0px";        
-
-        //move everything back to normal
-        for (let i = 1; i < 3; i++) {
-            charImgs[i-1].style.opacity = 1;
-
-            tNameInps[i-1].style.display = "none";
-            charLists[i+1].style.display = "none";
-            skinLists[i+1].style.display = "none";
-
-            document.getElementById('pInfo'+(i+2)).style.display = "none";
-
-            document.getElementById("row3-"+i).insertAdjacentElement("afterbegin", wlButtons[i-1]);
-            document.getElementById("row3-"+i).insertAdjacentElement("afterbegin", document.getElementById('scoreBox'+i));
-            document.getElementById("scoreText"+i).style.display = "block";
-        
-            document.getElementById('row1-'+i).insertAdjacentElement("afterbegin", document.getElementById('pInfo'+i));
-        
-        }
-
-        for (let i = 0; i < maxPlayers; i++) {
-            pTagInps[i].style.marginLeft = "0px";
-
-            pNameInps[i].style.borderTopRightRadius = "0px";
-            pNameInps[i].style.borderBottomRightRadius = "0px";
-
-            pTagInps[i].style.maxWidth = "70px"
-            pNameInps[i].style.maxWidth = "173px"
-            
-            charLists[i].style.maxWidth = "141px";
-            skinLists[i].style.maxWidth = "141px";
-        }
-
-        this.setAttribute('title', "Change the gamemode to Doubles");
-
-        //dropdown menus for the right side will now be positioned to the left
-        for (let i = 1; i < 5; i+=2) {
-            pFinders[i].style.left = "0px";
-            pFinders[i].style.right = "";
-        }
+    //move everything back to normal
+    charImgs[2].style.opacity = 0;
+    charImgs[3].style.opacity = 0;
+    for (let i = 0; i < 2; i++) {
+        pNameInps[i].style.display = "block";
+        pTagInps[i].style.display = "block";
+        tNameInps[i].style.display = "none";
     }
+
+    for (let i = 2; i < skinLists.length; i++) {
+        charLists[i].style.display = "none";
+        skinDivLists[i].style.display = "none";
+        charDivLists[i].style.display = "none";
+    }
+
+    document.getElementById('gamemode').setAttribute('title', "Change the gamemode to Doubles");
+    document.getElementById('gamemode').removeEventListener('click', setSingles);
+    document.getElementById('gamemode').addEventListener('click', setDoubles);
+}
+
+function setDoubles() {
+    //show singles icon
+    gmIcon2.style.opacity = 0;
+    gmIcon1.style.left = "11px"; 
+
+    //add some margin to the color buttons, change border radius
+    const lColor = document.getElementById("lColor");
+    lColor.style.marginLeft = "5px";
+    lColor.style.borderTopLeftRadius = "3px";
+    lColor.style.borderBottomLeftRadius = "3px";
+    const rColor = document.getElementById("rColor");
+    rColor.style.marginLeft = "5px";
+    rColor.style.borderTopLeftRadius = "3px";
+    rColor.style.borderBottomLeftRadius = "3px";
+
+
+    charImgs[2].style.opacity = 1;
+    charImgs[3].style.opacity = 1;
+
+    // Edit inputs from players to teams
+    for (let i = 0; i < 2; i++) {
+        pNameInps[i].style.display = "none";
+        pTagInps[i].style.display = "none";
+        tNameInps[i].style.display = "block";
+    }
+
+    for (let i = 2; i < skinLists.length; i++) {
+        charLists[i].style.display = "block";
+        skinDivLists[i].style.display = "block";
+        charDivLists[i].style.display = "block";
+    }
+
+    /*
+    for (let i = 2; i < skinLists.length; i++) {
+        console.log(skinLists[i]);
+        console.log(charDivLists[i]);
+        charLists[i].style.display = "none";
+        skinDivLists[i].style.display = "none";
+        charDivLists[i].style.display = "none";
+    }
+    for (let i = 1; i < 3; i++) {
+        document.getElementById("row1-"+i).insertAdjacentElement("afterbegin", wlButtons[i-1]);
+        document.getElementById("row1-"+i).insertAdjacentElement("afterbegin", document.getElementById('scoreBox'+i));
+        
+        document.getElementById("scoreText"+i).style.display = "none";
+
+        tNameInps[i-1].style.display = "block";
+
+        document.getElementById("row1-"+i).insertAdjacentElement("afterbegin", tNameInps[i-1]);
+
+        document.getElementById('row2-'+i).insertAdjacentElement("beforeend", document.getElementById('pInfo'+i));
+
+        charLists[i+1].style.display = "block";
+        if (skinLists[i+1].options.length <= 1) {
+            skinLists[i+1].style.display = "none";
+        } else {
+            skinLists[i+1].style.display = "block";
+        }
+
+        document.getElementById('pInfo'+(i+2)).style.display = "block";
+    }
+
+    //add some left margin to the name/tag inputs, add border radius, change max width
+    for (let i = 0; i < maxPlayers; i++) {
+        pTagInps[i].style.marginLeft = "5px";
+
+        pNameInps[i].style.borderTopRightRadius = "3px";
+        pNameInps[i].style.borderBottomRightRadius = "3px";
+
+        pTagInps[i].style.maxWidth = "45px"
+        pNameInps[i].style.maxWidth = "94px"
+        
+        charLists[i].style.maxWidth = "65px";
+        skinLists[i].style.maxWidth = "65px";
+    }
+
+    //dropdown menus for the right side will now be positioned to the right
+    for (let i = 1; i < 5; i+=2) {
+        pFinders[i].style.right = "0px";
+        pFinders[i].style.left = "";
+    }
+    */
+
+    document.getElementById("dropdownColorR").style.right = "0px";
+    document.getElementById("dropdownColorR").style.left = "";
+
+    document.getElementById('gamemode').setAttribute('title', "Change the gamemode to Singles");
+    document.getElementById('gamemode').removeEventListener('click', setDoubles);
+    document.getElementById('gamemode').addEventListener('click', setSingles);
 }
 
 
@@ -1204,36 +1318,6 @@ function setScore(score, tick1, tick2, tick3) {
 }
 
 
-//called whenever the user clicks on the workshop toggle
-function workshopToggle() {
-
-    // set a new character path
-    charPath = this.checked ? charPathWork : charPathBase;
-    
-    //clear current character lists
-    for (let i = 0; i < maxPlayers; i++) {
-        clearList(charLists[i])        
-    }
-    //then reload character lists
-    loadCharacters();
-    //dont forget to clear the skin lists
-    for (let i = 0; i < maxPlayers; i++) {
-        clearList(skinLists[i])
-        skinLists[i].style.display = "none";
-    }
-
-    // disable or enable alt arts checkbox
-    if (this.checked) {
-        document.getElementById("forceAlt").disabled = false;
-    } else {
-        document.getElementById("forceAlt").disabled = true;
-    }
-
-    // save current checkbox value to the settings file
-    saveGUISettings();
-
-}
-
 // whenever the user clicks on the force W/L checkbox
 function forceWLtoggle() {
 
@@ -1254,20 +1338,6 @@ function forceWLtoggle() {
 
 }
 
-// whenever the user clicks on the HD renders checkbox
-function HDtoggle() {
-
-    // enables or disables the second forceHD option
-    if (this.checked) {
-        noLoAHDCheck.disabled = false;
-    } else {
-        noLoAHDCheck.disabled = true;
-    }
-
-    // save current checkbox value to the settings file
-    saveGUISettings();
-
-}
 
 // sends the signal to electron to activate always on top
 function alwaysOnTop() {
@@ -1360,7 +1430,7 @@ function writeScoreboard() {
         //we need to perform this check since the program would halt when reading from null
         let realSkin;
         try {
-            realSkin = skinLists[i].selectedOptions[0].text
+            realSkin = charImgs[i].title;
         } catch (error) {
             realSkin = "";
         }
@@ -1368,7 +1438,7 @@ function writeScoreboard() {
         scoreboardJson.player.push({
             name: pNameInps[i].value,
             tag: pTagInps[i].value,
-            character: charLists[i].selectedOptions[0].text,
+            character: charLists[i].title,
             skin: realSkin,
         })
     }

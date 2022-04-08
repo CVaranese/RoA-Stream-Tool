@@ -11,8 +11,10 @@ function createWindow() {
 
     try {
 
+
         if (process.platform == "win32") { // if on Windows
-            resourcesPath = path.resolve(process.env.PORTABLE_EXECUTABLE_DIR, 'Resources')
+            resourcesPath = path.resolve('D:\\Stream Tools\\Project-Plus-Stream-Tool\\Stream Tool\\Resources')
+            //resourcesPath = path.resolve(process.env.PORTABLE_EXECUTABLE_DIR, 'Resources')
         } else { // if on Linux
             resourcesPath = path.resolve('.', 'Resources')
         }
@@ -49,6 +51,7 @@ function createWindow() {
 
     })
 
+    
     // we dont like menus
     win.removeMenu()
 
@@ -58,7 +61,7 @@ function createWindow() {
     } else {
         win.loadFile(resourcesPath + "/GUI.html");
     }
-    
+
     // keyboard shortcuts!
     win.webContents.on('before-input-event', (event, input) => {
         if (input.key === 'F5') { // refresh the page
@@ -78,10 +81,13 @@ function createWindow() {
             win.setAlwaysOnTop(false)
         }
     })
-    
+
 }
 
 
+process.on('uncaughtException', function (error) {
+   console.log(error);
+});
 
 // create window on startup
 app.whenReady().then(() => {

@@ -7,8 +7,9 @@
   "author": "Readek",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^12.2.2",
-    "electron-builder": "^22.11.7"
+    "electron": "^17.1.2",
+    "electron-builder": "^22.14.13",
+    "http-server": "^14.1.0"
   },
   "scripts": {
     "start": "electron .",
@@ -22,5 +23,10 @@
     "win": {
       "target": "portable"
     }
+  },
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "uniq": "^1.0.1"
   }
 }

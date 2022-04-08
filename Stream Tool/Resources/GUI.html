@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8">
-    <title>RoA Stream Tool v7.1</title>
+    <title>Stream Tool v7.1</title>
     <link rel="stylesheet" href="CSS/GUI.css">
     <script src="Scripts/mousetrap.min.js" defer></script>
     <script src="Scripts/GUI.js" defer></script>
@@ -24,6 +24,7 @@
 
             <div class="charImgBox">
               <img id="p1CharImg" class="charImg"/>
+              <img id="p3CharImg" class="charImg"/>
             </div>
 
             <div class="sideEditor">
@@ -53,27 +54,7 @@
 
               <div class="row" id="row2-1">
 
-                <select id="p1Char" class="charCombo mousetrap charList" title="Everyone is here!" tabindex="-1"></select>
-                <select id="p1Skin" class="charCombo mousetrap skinList" tabindex="-1"></select>
-
-              </div>
-
-              <div class="row" id="row3-1">
-
-                <select id="p3Char" class="charCombo mousetrap charList" title="Everyone is here!" tabindex="-1"></select>
-                <select id="p3Skin" class="charCombo mousetrap skinList" tabindex="-1"></select>
-
-                <div class="playerInfo" id="pInfo3">
-
-                  <input type="text" id="p3Tag" class="textInput mousetrap tagInput" tabindex="3" placeholder="Tag" title="Insert the tag/team/sponsor here" spellcheck="false" contenteditable="true">
-                  <div class="pFinderPosition" id="pFinderBox3">
-                    <input type="text" id="p3Name" class="textInput mousetrap nameInput" tabindex="3" placeholder="Player 3" title="Insert P3's name here" spellcheck="false">
-                    <div class="playerFinder" id="pFinder3"></div>
-                  </div>
-
-                </div>
-
-                <div class="scoreBox" id="scoreBox1" title="Press F1 to increase the score">
+                 <div class="scoreBox" id="scoreBox1" title="Press F1 to increase the score">
                   <span id="scoreText1">Wins</span>
                   <input type="checkbox" id="winP1-1" class="scoreCheck mousetrap" tabindex="-1">
                   <input type="checkbox" id="winP1-2" class="scoreCheck mousetrap" tabindex="-1">
@@ -85,6 +66,24 @@
                   <div id="p1L" class="wlBox">[L]</div>
                 </div>
 
+              </div>
+
+              <div class="row" id="row3-1">
+
+                <div class="charSelector" id="p3CharSelectorDiv">
+                  <img class="charSelectorImg" id="p3CharSelector" tabindex="50"/>
+                </div>
+                <div class="skinSelector" id="skinSelectorP3">
+                  <div id="skinListP3"></div>
+                </div>
+
+                <div class="charSelector" id="p1CharSelectorDiv">
+                  <img class="charSelectorImg" id="p1CharSelector" tabindex="50"/>
+                </div>
+
+                <div class="skinSelector" id="skinSelectorP1">
+                  <div id="skinListP1"></div>
+                </div>
               </div>
 
             </div>
@@ -110,7 +109,9 @@
 
             <div class="charImgBox">
               <img id="p2CharImg" class="charImg"/>
+              <img id="p4CharImg" class="charImg"/>
             </div>
+
             
             <div class="sideEditor">
 
@@ -138,27 +139,6 @@
               </div>
 
               <div class="row" id="row2-2">
-
-                <select id="p2Char" class="charCombo mousetrap charList" title="Everyone is here!" tabindex="-1"></select>
-                <select id="p2Skin" class="charCombo mousetrap skinList" tabindex="-1"></select>
-
-              </div>
-
-              <div class="row" id="row3-2">
-
-                <select id="p4Char" class="charCombo mousetrap charList" title="Everyone is here!" tabindex="-1"></select>
-                <select id="p4Skin" class="charCombo mousetrap skinList" tabindex="-1"></select>
-
-                <div class="playerInfo" id="pInfo4">
-
-                  <input type="text" id="p4Tag" class="textInput mousetrap tagInput" tabindex="3" placeholder="Tag" title="Insert the tag/team/sponsor here" spellcheck="false" contenteditable="true">
-                  <div class="pFinderPosition" id="pFinderBox4">
-                    <input type="text" id="p4Name" class="textInput mousetrap nameInput" tabindex="3" placeholder="Player 4" title="Insert P4's name here" spellcheck="false">
-                    <div class="playerFinder" id="pFinder4"></div>
-                  </div>
-
-                </div>
-                
                 <div class="scoreBox" id="scoreBox2" title="Press F2 to increase the score">
                   <span id="scoreText2">Wins</span>
                   <input type="checkbox" id="winP2-1" class="scoreCheck mousetrap" tabindex="-1">
@@ -170,11 +150,31 @@
                   <div id="p2W" class="wlBox">[W]</div>
                   <div id="p2L" class="wlBox">[L]</div>
                 </div>
+                
 
               </div>
-              
-            </div>
 
+              <div class="row" id="row3-2">
+
+                
+
+                <div class="charSelector" id="p4CharSelectorDiv">
+                  <img class="charSelectorImg" id="p4CharSelector" tabindex="50"/>
+                </div>
+                <div class="skinSelector" id="skinSelectorP4">
+                  <div id="skinListP4"></div>
+                </div>
+
+                <div class="charSelector" id="p2CharSelectorDiv">
+                  <img class="charSelectorImg" id="p2CharSelector" tabindex="50"/>
+                </div>
+
+                <div class="skinSelector" id="skinSelectorP2">
+                  <div id="skinListP2"></div>
+                </div>
+
+              </div>
+            </div>
           </div>
         </div>
 
@@ -285,32 +285,15 @@
 
         <div id="actualSettings">
 
-          <div class="settingBox" title="Plays an intro on 'RoA Scoreboard.html' whenever the file loads.">
+          <div class="settingBox" title="Plays an intro on 'Scoreboard.html' whenever the file loads.">
             <input type="checkbox" id="allowIntro" class="settingsCheck" tabindex="-1">
             <label for="allowIntro" class="settingsText">Allow Intro</span>
-          </div>
-
-          <div class="settingBox" title="Changes the character list to the workshop one.">
-            <input type="checkbox" id="workshopToggle" class="settingsCheck" tabindex="-1">
-            <label for="workshopToggle" class="settingsText">Use Workshop characters</span>
-          </div>
-
-          <div class="settingBox" title="Uses alternative art for workshop characters
-that have one on 'RoA Scoreboard.html'.">
-            <input type="checkbox" id="forceAlt" class="settingsCheck" tabindex="-1">
-            <label for="forceAlt" id="mmText" class="settingsText">Use 'Alt' skins in Scoreboard</span>
           </div>
 
           <div class="settingBox" title="Forces HD renders to appear on the VS screen,
 while keeping the regular renders for the scoreboard.">
             <input type="checkbox" id="forceHD" class="settingsCheck" tabindex="-1">
             <label for="forceHD" class="settingsText">HD renders in VS Screen</span>
-          </div>
-
-          <div class="settingBox" title="Will just show regular HD renders in the
-VS Screen even when LoA skins are selected.">
-            <input type="checkbox" id="noLoAHD" class="settingsCheck" disabled tabindex="-1">
-            <label for="noLoAHD" class="settingsText">No LoA HD renders</span>
           </div>
           
           <div class="settingBox" title="Forces the [W]/[L] buttons to appear on the interface.
@@ -329,6 +312,29 @@ They will always appear when typing 'Grand' in the round box.">
           </button>
 
         </div>        
+      </div>
+      <div id="charRoster">
+        <div class="rosterLine" id="rosterLine1">
+          
+        </div>
+        <div class="rosterLine" id="rosterLine2">
+
+        </div>
+        <div class="rosterLine" id="rosterLine3">
+
+        </div>
+        <div class="rosterLine" id="rosterLine4">
+
+        </div>
+        <div class="rosterLine" id="rosterLine5">
+
+        </div>
+        <div class="rosterLine" id="rosterLine6">
+
+        </div>
+        <div class="rosterLine" id="rosterLine7">
+
+        </div>
       </div>
 
       <div id="goBack"></div>

@@ -1,6 +1,18 @@
 {
   "player": [
     {
+<<<<<<< HEAD
+      "name": "Dox",
+      "tag": "slo",
+      "character": "Wario",
+      "skin": "Wario (13)"
+    },
+    {
+      "name": "captain sparkles",
+      "tag": "slo",
+      "character": "Zelda",
+      "skin": "Zelda (4)"
+=======
       "name": "",
       "tag": "",
       "character": "Forsburn",
@@ -23,6 +35,7 @@
       "tag": "",
       "character": "Random",
       "skin": ""
+>>>>>>> 8bba100... Project m Character Files
     }
   ],
   "teamName": [
@@ -34,7 +47,7 @@
     "Blue"
   ],
   "score": [
-    1,
+    2,
     2
   ],
   "wl": [
@@ -43,6 +56,20 @@
   ],
   "bestOf": "Bo3",
   "gamemode": 1,
+<<<<<<< HEAD
+  "round": "Winners Round 1",
+  "tournamentName": "Camp",
+  "caster": [
+    {
+      "name": "ddddd",
+      "twitter": "ewrw",
+      "twitch": "23423fc"
+    },
+    {
+      "name": "ffffffffffff",
+      "twitter": "ewrer",
+      "twitch": "342v3c23"
+=======
   "round": "WR1",
   "tournamentName": "CMAP",
   "caster": [
@@ -55,6 +82,7 @@
       "name": "uuuuu",
       "twitter": "",
       "twitch": ""
+>>>>>>> 8bba100... Project m Character Files
     }
   ],
   "allowIntro": false,
