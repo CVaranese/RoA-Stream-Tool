@@ -1378,10 +1378,8 @@ function saveGUISettings() {
 
     // update the settings to current values
     guiSettings.allowIntro = document.getElementById("allowIntro").checked;
-    guiSettings.workshop = workshopCheck.checked;
     guiSettings.forceAlt = document.getElementById("forceAlt").checked;
     guiSettings.forceHD = document.getElementById("forceHD").checked;
-    guiSettings.noLoAHD = noLoAHDCheck.checked;
     guiSettings.forceWL = forceWL.checked;
     guiSettings.alwaysOnTop = document.getElementById("alwaysOnTop").checked;
 
@@ -1419,10 +1417,7 @@ function writeScoreboard() {
         tournamentName: tournamentInp.value,
         caster: [],
         allowIntro: document.getElementById('allowIntro').checked,
-        workshop: workshopCheck.checked,
-        forceHD: document.getElementById('forceHD').checked,
-        noLoAHD: noLoAHDCheck.checked,
-        forceAlt: document.getElementById('forceAlt').checked
+        forceHD: document.getElementById('forceHD').checked
     };
     //add the player's info to the player section of the json
     for (let i = 0; i < maxPlayers; i++) {
