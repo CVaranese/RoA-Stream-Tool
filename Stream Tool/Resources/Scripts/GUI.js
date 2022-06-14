@@ -1,9 +1,17 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 const electron = require('electron');
 const ipc = electron.ipcRenderer;
+
+// this is a weird way to have file svg's that can be recolored by css
+customElements.define("load-svg", class extends HTMLElement {
+    async connectedCallback(
+      shadowRoot = this.shadowRoot || this.attachShadow({mode:"open"})
+    ) {
+      shadowRoot.innerHTML = await (await fetch(this.getAttribute("src"))).text()
+    }
+})
 
 // yes we all like global variables
 const textPath = __dirname + '/Texts';
@@ -12,7 +20,9 @@ const charPathWork = __dirname + '/Characters/_Workshop';
 const charPathRandom = __dirname + '/Characters/Random';
 
 const colorList = getJson(textPath + "/Color Slots");
-let colorL, colorR;
+let currentColors = [0, 0];
+
+let scData; // we will store data to send to the browsers here
 
 let currentP1WL = "Nada";
 let currentP2WL = "Nada";
@@ -25,6 +35,8 @@ let charP1Active = false;
 
 let inPF = false;
 let currentFocus = -1;
+
+let currentPlayer;
 
 const maxPlayers = 4; //change this if you ever want to remake this into singles only or 3v3 idk
 
@@ -54,7 +66,6 @@ pushArrayInOrder(charDivLists, "p", "CharSelectorDiv");
 pushArrayInOrder(skinDivLists, "skinSelectorP", "");
 pushArrayInOrder(skinLists, "skinListP", "");
 pushArrayInOrder(charImgs, "p", "CharImg");
-
 const p1Win1 = document.getElementById('winP1-1');
 const p1Win2 = document.getElementById('winP1-2');
 const p1Win3 = document.getElementById('winP1-3');
@@ -79,6 +90,11 @@ const tournamentInp = document.getElementById('tournamentName');
 const casters = document.getElementsByClassName("caster");
 
 const forceWL = document.getElementById('forceWLToggle');
+const forceAlt = document.getElementById("forceAlt");
+
+const pFinder = document.getElementById("playerFinder");
+const charFinder = document.getElementById("characterFinder");
+const skinFinder = document.getElementById("skinFinder");
 
 
 init();
@@ -109,13 +125,11 @@ function init() {
 
     /* Overlay */
     setSingles();
-
     //load color slot list and add the color background on each side
 
     loadColors();
 
     //load the character list for all players on startup
-
     loadCharacters();
 
     createCharRoster();
@@ -132,6 +146,9 @@ function init() {
             charImgs[i].setAttribute('src', charPathRandom + '/P2.png');
         });
     }
+    // also set listeners for the input filters of char/skin selects
+    charFinder.addEventListener("input", () => {filterFinder(charFinder)});
+    skinFinder.addEventListener("input", () => {filterFinder(skinFinder)});
     
 
     //score tick listeners, to automatically check/uncheck the other ticks
@@ -149,21 +166,31 @@ function init() {
     p2L.addEventListener("click", setWLP2);
 
 
+    // prepare the player finder (player presets)
+    // if the mouse is hovering a player preset, let us know
+    pFinder.addEventListener("mouseenter", () => { inPF = true });
+    pFinder.addEventListener("mouseleave", () => { inPF = false });
+
     //for each player input field
     // TODO: doubles
     for (let i = 0; i < 2; i++) {
 
-        //prepare the player finder (player presets)
-        preparePF(i+1);
+        //hide the player presets menu if text input loses focus
+        pNameInps[i].addEventListener("focusout", () => {
+            if (!inPF) { //but not if the mouse is hovering a player preset
+                pFinder.style.display = "none";
+            }
+        });
 
         //check if theres a player preset every time we type or click in the player box
-        pNameInps[i].addEventListener("input", checkPlayerPreset);
-        pNameInps[i].addEventListener("focusin", checkPlayerPreset);
+        pNameInps[i].addEventListener("input", () => {checkPlayerPreset(i)});
+        pNameInps[i].addEventListener("focusin", () => {checkPlayerPreset(i)});
 
         //resize the container if it overflows
         pNameInps[i].addEventListener("input", resizeInput);
         //also do it for tag inputs while we're at it
         pTagInps[i].addEventListener("input", resizeInput);
+
     }
     
 
@@ -185,17 +212,27 @@ function init() {
     document.getElementById('clearButton').addEventListener("click", clearPlayers);
 
 
+    // finally, update the GUI on startup so we have something to send to browsers
+    writeScoreboard();
+
+
     /* KEYBOARD SHORTCUTS */
 
     //enter
     Mousetrap.bind('enter', () => {
 
-        if (isPresetOpen()) {
-            //if a player presets menu is open, load preset
-            for (let i = 0; i < pFinders.length; i++) {
-                if (pFinders[i].style.display == "block" && currentFocus > -1) {
-                    pFinders[i].getElementsByClassName("finderEntry")[currentFocus].click();
-                }
+        // if a dropdown menu is open, click on the current focus
+        if (pFinder.style.display == "block") {
+            if (currentFocus > -1) {
+                pFinder.getElementsByClassName("finderEntry")[currentFocus].click();
+            }
+        } else if (window.getComputedStyle(charFinder).getPropertyValue("display") == "block") {
+            if (currentFocus > -1) {
+                charFinder.getElementsByClassName("finderEntry")[currentFocus].click();
+            }
+        } else if (window.getComputedStyle(skinFinder).getPropertyValue("display") == "block") {
+            if (currentFocus > -1) {
+                skinFinder.getElementsByClassName("finderEntry")[currentFocus].click();
             }
         } else {
             //update scoreboard info (updates botBar color for visual feedback)
@@ -213,10 +250,11 @@ function init() {
     Mousetrap.bind('esc', () => {
         if (movedSettings) { //if settings are open, close them
             goBack();
-        } else if (isPresetOpen()) { //if a player preset is open, close it
-            for (let i = 0; i < pFinders.length; i++) {
-                pFinders[i].style.display = "none";
-            }
+        } else if (pFinder.style.display == "block") { // if a finder menu is open, close it
+            pFinder.style.display = "none";
+        } else if (window.getComputedStyle(charFinder).getPropertyValue("display") == "block"
+        || window.getComputedStyle(skinFinder).getPropertyValue("display") == "block") {
+            document.activeElement.blur();
         } else {
             clearPlayers(); //by default, clear player info
         }
@@ -228,36 +266,29 @@ function init() {
 
     //up/down, to navigate the player presets menu (only when a menu is shown)
     Mousetrap.bind('down', () => {
-        for (let i = 0; i < pFinders.length; i++) {
-            if (pFinders[i].style.display == "block") {
-                currentFocus++;
-                addActive(pFinders[i].getElementsByClassName("finderEntry"));
-            }
+        if (pFinder.style.display == "block") {
+            addActive(pFinder.getElementsByClassName("finderEntry"), true);
+        } else if (window.getComputedStyle(charFinder).getPropertyValue("display") == "block") {
+            addActive(charFinder.getElementsByClassName("finderEntry"), true);
+        } else if (window.getComputedStyle(skinFinder).getPropertyValue("display") == "block") {
+            addActive(skinFinder.getElementsByClassName("finderEntry"), true);
         }
     });
     Mousetrap.bind('up', () => {
-        for (let i = 0; i < pFinders.length; i++) {
-            if (pFinders[i].style.display == "block") {
-                currentFocus--;
-                addActive(pFinders[i].getElementsByClassName("finderEntry"));
-            }
+        if (pFinder.style.display == "block") {
+            addActive(pFinder.getElementsByClassName("finderEntry"), false);
+        } else if (window.getComputedStyle(charFinder).getPropertyValue("display") == "block") {
+            addActive(charFinder.getElementsByClassName("finderEntry"), false);
+        } else if (window.getComputedStyle(skinFinder).getPropertyValue("display") == "block") {
+            addActive(skinFinder.getElementsByClassName("finderEntry"), false);
         }
     });
 }
 
-function isPresetOpen() {
-    let theBool = false;
-    for (let i = 0; i < pFinders.length; i++) {
-        if (pFinders[i].style.display == "block") {
-            theBool = true;
-        }   
-    }
-    return theBool;
-}
 
 function moveViewport() {
     if (!movedSettings) {
-        viewport.style.transform = "translateX(calc(-140% / 3))";
+        viewport.style.transform = "translateX(-40%)";
         overlayDiv.style.opacity = ".25";
         goBackDiv.style.display = "block"
         movedSettings = true;
@@ -265,7 +296,7 @@ function moveViewport() {
 }
 
 function goBack() {
-    viewport.style.transform = "translateX(calc(-100% / 3))";
+    viewport.style.transform = "translateX(0)";
     overlayDiv.style.opacity = "1";
     goBackDiv.style.display = "none";
     movedSettings = false;
@@ -293,7 +324,6 @@ function loadCharacters() {
         charImgChange(charImgs[i], "Random", "Random Blue");
     }
 }
-
 
 //whenever we click on the character change button
 function openChars() {
@@ -366,7 +396,6 @@ function addSkinIcons(pNum) {
 
             document.getElementById('skinListP'+pNum).appendChild(newImg);
         }
-       
     }
 
     //if the list only has 1 skin or none, hide the skin list
@@ -454,85 +483,116 @@ function createCharRoster() {
     }
 }
 
-//called whenever we want to change the character
-function charChange(list) {
-
-    const currentChar = list.selectedOptions[0].text; //character that has been selected
-
-    //we need to know from what player is this coming from somehow
-    const pNum = list.id.substring(1, 2); //yes this is hella dirty
-    const skinList = skinLists[pNum-1];
-
-    //load a new skin list
-    loadSkins(skinList, currentChar);
-
-    //change the character image of the interface (only for first 2 players)
-    if (pNum < 3) {
-        //check if skinlist exists first so we dont bug the code later 
-        let currentSkin;
-        if (skinList.selectedOptions[0]) {
-            currentSkin = skinList.selectedOptions[0].text;
-        }
-        charImgChange(charImgs[pNum-1], currentChar, currentSkin);
-    }
+// every time a character is clicked on the char list
+function charChange(character, pNum = -1) {
     
-    //hide the skin dropdown if the list has 1 or less entries
-    if (gamemode == 1 && (pNum == 3 || pNum == 4)) {
-        //dont do this for players 3 and 4 if the gamemode is singles
+    // clear focus to hide character select menu
+    document.activeElement.blur();
+
+    // clear filter box
+    charFinder.firstElementChild.value = "";
+
+    if (pNum != -1) {
+        currentPlayer = pNum;
+    }
+
+    // update character selector text
+    charSelectors[currentPlayer].children[1].innerHTML = character;
+
+    // update character selector icon (making sure it exists)
+    if (fs.existsSync(`${charPath}/${character}/Icon.png`)) {
+        charSelectors[currentPlayer].children[0].src = `${charPath}/${character}/Icon.png`;
     } else {
-        if (skinList.options.length <= 1) {
-            skinList.style.display = "none";
+        charSelectors[currentPlayer].children[0].src = `${charPathRandom}/Icon.png`;
+
+    }
+
+    // check the first skin of the list for this character
+    const charInfo = getJson(`${charPath}/${character}/_Info`);
+    let skin;
+
+    if (charInfo) {
+
+        // set the skin variable from the skin list
+        skin = charInfo.skinList[0]
+        // change the text of the skin selector
+        skinSelectors[currentPlayer].innerHTML = skin;
+        // if there's only 1 skin, dont bother displaying skin selector
+        if (charInfo.skinList.length > 1) {
+            skinSelectors[currentPlayer].style.display = "flex"
         } else {
-            skinList.style.display = "inline";
+            skinSelectors[currentPlayer].style.display = "none";
         }
-    }
-    
 
-    //check if the current player name has a custom skin for the character
-    checkCustomSkin(pNum);
-
-    //change the width of the box depending on the current text
-    changeListWidth(list);
-
-    //do the same for the skin
-    changeListWidth(skinList);
-
-}
-//same but for listeners
-function charChangeL() {
-    charChange(this)
-}
-
-//for when skin changes, same logic as above
-function skinChange(list) {
-
-    //which player is it?
-    const pNum = list.id.substring(1, 2);
-
-    //which character is it?
-    const currentChar = charLists[pNum-1].selectedOptions[0].text;
-
-    //which skin is it?
-    let currentSkin;
-    try { //this is necessary when reading from random, wich has no skins
-        currentSkin = list.selectedOptions[0].text;
-    } catch (error) {
-        currentSkin = null;
+    } else { // if it doesnt exist, hide the skin selector
+        skinSelectors[currentPlayer].innerHTML = "";
+        skinSelectors[currentPlayer].style.display = "none";
     }
 
-    //change the image with the current skin (if player 1 or 2)
-    if (pNum < 3) {
-        charImgChange(charImgs[pNum-1], currentChar, currentSkin);
+    // change the background character image (only for first 2 players)
+    if (currentPlayer < 2) {
+        charImgChange(charImgs[currentPlayer], character, skin);
     }
 
-    //change the width of the combo box depending on the text
-    changeListWidth(list);
+}
 
-}
-//for listeners
-function skinChangeL() {
-    skinChange(this);
-}
+function openSkinSelector(pNum) {
+
+    // clear the list
+    skinFinder.lastElementChild.innerHTML = "";
+
+    // get the character skin list for this skin selector
+    const character = charSelectors[pNum].getElementsByClassName("charSelectorText")[0].innerHTML;
+    const charInfo = getJson(`${charPath}/${character}/_Info`);
+
+    // for every skin on the skin list, add an entry
+    for (let i = 0; i < charInfo.skinList.length; i++) {
+        
+        // this will be the div to click
+        const newDiv = document.createElement('div');
+        newDiv.className = "finderEntry";
+        newDiv.addEventListener("click", () => {skinChange(character, charInfo.skinList[i], pNum)});
+        
+        // character name
+        const spanName = document.createElement('span');
+        spanName.innerHTML = charInfo.skinList[i];
+        spanName.className = "pfName";
+
+        // add them to the div we created before
+        newDiv.appendChild(spanName);
+
+        // now for the character image, this is the mask/mirror div
+        const charImgBox = document.createElement("div");
+        charImgBox.className = "pfCharImgBox";
+
+        // actual image
+        const charImg = document.createElement('img');
+        charImg.className = "pfCharImg";
+        charImg.setAttribute('src', `${charPath}/${character}/${charInfo.skinList[i]}.png`);
+        // we have to position it
+        positionChar(character, charInfo.skinList[i], charImg);
+        // and add it to the mask
+        charImgBox.appendChild(charImg);
+
+        //add it to the main div
+        newDiv.appendChild(charImgBox);
+
+        // and now add the div to the actual GUI
+        skinFinder.lastElementChild.appendChild(newDiv);
+
+    }
+
+    // move the dropdown menu under the current skin selector
+    skinSelectors[pNum].appendChild(skinFinder);
+
+    // if this is the right side, change anchor point so it stays visible
+    if (pNum%2 != 0) {
+        skinFinder.style.right = "0px";
+        skinFinder.style.left = "";
+    } else {
+        skinFinder.style.left = "0px";
+        skinFinder.style.right = "";
+    }
 
 //change the image path depending on the character and skin
 function charImgChange(charImg, charName, skinName) {
@@ -540,42 +600,74 @@ function charImgChange(charImg, charName, skinName) {
     charImg.setAttribute('src', charPath + '/' + charName + '/Renders/' + skinName + '.png');
 }
 
-//will load the skin list of a given character
-function loadSkins(comboList, character) {
-    const charInfo = getJson(charPath + "/" + character + "/_Info");
+// every time a skin is clicked on the skin list
+function skinChange(char, skin, pNum) {
 
-    clearList(comboList); //clear the past character's skin list
-    if (charInfo) { //if character doesnt have a list (for example: Random), skip this
-        addEntries(comboList, charInfo.skinList); //will add everything on the skin list
+    // update the text of the skin selector
+    skinSelectors[pNum].innerHTML = skin
+    
+    // change the background character image (if first 2 players)
+    if (pNum < 2) {
+        charImgChange(charImgs[pNum], char, skin);
     }
+
+    // remove focus from the skin list so it auto hides
+    document.activeElement.blur();
+
 }
 
-//will add entries to a combo box with a given array
-function addEntries(comboList, list) {
-    for (let i = 0; i < list.length; i++) {
-        const option = document.createElement('option'); //create new entry
-        option.text = list[i]; //set the text of entry
-        option.className = "theEntry";
-        comboList.add(option); //add the entry to the combo list
+
+// called whenever we type anything on the finders
+function filterFinder(finder) {
+
+    // we want to store the first entry starting with filter value
+    let startsWith;
+
+    // get the current text
+    const filterValue = finder.getElementsByClassName("listSearch")[0].value;
+
+    // for every entry on the list
+    const finderEntries = finder.getElementsByClassName("searchList")[0].children;
+
+    for (let i = 0; i < finderEntries.length; i++) {
+        
+        // find the name we are looking for
+        const entryName = finderEntries[i].getElementsByClassName("pfName")[0].innerHTML;
+
+        // if the name doesnt include the filter value, hide it
+        if (entryName.toLocaleLowerCase().includes(filterValue.toLocaleLowerCase())) {
+            finderEntries[i].style.display = "flex";
+        } else {
+            finderEntries[i].style.display = "none";
+        }
+
+        // if its starts with the value, store its position
+        if (entryName.toLocaleLowerCase().startsWith(filterValue.toLocaleLowerCase()) && !startsWith) {
+            startsWith = i;
+        }
+
     }
+
+    currentFocus = -1;
+
+    // if no value, just remove any remaining active classes
+    if (filterValue == "") {
+        removeActiveClass(finder.getElementsByClassName("finderEntry"));
+    } else {
+        if (startsWith) currentFocus = startsWith - 1;
+        addActive(finder.getElementsByClassName("finderEntry"), true);
+    }
+
 }
 
-//deletes all entries of a given combo list
-function clearList(comboList) {
-    for(let i = comboList.length; i >= 0; i--) {
-        comboList.remove(i);
-    }
-}
 
-//used to change the width of a combo box depending on the current text
-function changeListWidth(list) {
-    try { //this is to fix a bug that happens when trying to read from a hidden list
-        list.style.width = getTextWidth(list.selectedOptions[0].text,
-            window.getComputedStyle(list).fontSize + " " +
-            window.getComputedStyle(list).fontFamily
-            ) + 12 + "px";
-    } catch (error) {
-        //do absolutely nothing
+//change the image path depending on the character and skin
+function charImgChange(charImg, charName, skinName) {
+    // check if the file requested exists and add a placeholder if it doesnt
+    if (fs.existsSync(`${charPath}/${charName}/${skinName}.png`)) {
+        charImg.src = `${charPath}/${charName}/${skinName}.png`;
+    } else {
+        charImg.src = `${charPathRandom}/P2.png`;
     }
 }
 
@@ -597,9 +689,7 @@ function loadColors() {
         
         //create the color's rectangle
         const newRect = document.createElement('div');
-        newRect.style.width = "13px";
-        newRect.style.height = "13px";
-        newRect.style.margin = "5px";
+        newRect.className = "colorInList";
         newRect.style.backgroundColor = colorList[i].hex;
 
         //add them to the div we created before
@@ -638,9 +728,9 @@ function updateColor() {
             
             //change the variable that will be read when clicking the update button
             if (side == "l") {
-                colorL = colorList[i].name;
+                currentColors[0] = colorList[i];
             } else {
-                colorR = colorList[i].name;
+                currentColors[1] = colorList[i];
             }
 
             //then change both the color rectangle and the background gradient
@@ -761,37 +851,23 @@ function deactivateWL() {
 }
 
 
-//player presets setup
-function preparePF(pNum) {
-    const pFinderEL = pFinders[pNum-1];
-
-    //if the mouse is hovering a player preset, let us know
-    pFinderEL.addEventListener("mouseenter", () => { inPF = true });
-    pFinderEL.addEventListener("mouseleave", () => { inPF = false });
-
-    //hide the player presets menu if text input loses focus
-    pNameInps[pNum-1].addEventListener("focusout", () => {
-        if (!inPF) { //but not if the mouse is hovering a player preset
-            pFinderEL.style.display = "none";
-        }
-    });
-}
-
 //called whenever the user types something in the player name box
-function checkPlayerPreset() {
+function checkPlayerPreset(pNum) {
 
     //remove the "focus" for the player presets list
     currentFocus = -1;
 
-    //player check once again
-    const pNum = this.id.substring(1, 2);
-    const pFinderEL = pFinders[pNum-1];
+    // move the player finder under the current player input
+    pNameInps[pNum].parentElement.appendChild(pFinder);
 
     //clear the current list each time we type
-    pFinderEL.innerHTML = "";
+    pFinder.innerHTML = "";
+
+    // check for later
+    let fileFound;
 
     //if we typed at least 3 letters
-    if (this.value.length >= 3) {
+    if (pNameInps[pNum].value.length >= 3) {
 
         //check the files in that folder
         const files = fs.readdirSync(textPath + "/Player Info/");
@@ -801,10 +877,13 @@ function checkPlayerPreset() {
             file = file.substring(0, file.length - 5);
 
             //if the current text matches a file from that folder
-            if (file.toLocaleLowerCase().includes(this.value.toLocaleLowerCase())) {
+            if (file.toLocaleLowerCase().includes(pNameInps[pNum].value.toLocaleLowerCase())) {
+
+                // store that we found at least one preset
+                fileFound = true;
 
                 //un-hides the player presets div
-                pFinderEL.style.display = "block";
+                pFinder.style.display = "block";
 
                 //go inside that file to get the player info
                 const playerInfo = getJson(textPath + "/Player Info/" + file);
@@ -814,7 +893,7 @@ function checkPlayerPreset() {
                     //this will be the div to click
                     const newDiv = document.createElement('div');
                     newDiv.className = "finderEntry";
-                    newDiv.addEventListener("click", playerPreset);
+                    newDiv.addEventListener("click", () => {playerPreset(newDiv, pNum)});
                     
                     //create the texts for the div, starting with the tag
                     const spanTag = document.createElement('span');
@@ -862,14 +941,31 @@ function checkPlayerPreset() {
                     newDiv.appendChild(charImgBox);
 
                     //and now add the div to the actual interface
-                    pFinderEL.appendChild(newDiv);
+                    pFinder.appendChild(newDiv);
+
                 });
             }
         });
     }
+
+    // if no presets were found, hide the player finder
+    if (!fileFound) {
+        pFinder.style.display = "none";
+    }
+
+    // if playing 2v2 and if the current player is on the right side
+    if (gamemode == 2 && pNum%2 != 0) {
+        // anchor point will be at the right side so it stays visible
+        pFinder.style.right = "0px";
+        pFinder.style.left = "";
+    } else {
+        pFinder.style.left = "0px";
+        pFinder.style.right = "";
+    }
+
 }
 
-//now the complicated "change character image" function!
+// now the complicated "position character image" function!
 async function positionChar(character, skin, charEL) {
 
     //get the character positions
@@ -909,74 +1005,100 @@ async function positionChar(character, skin, charEL) {
 }
 
 //called when the user clicks on a player preset
-function playerPreset() {
+function playerPreset(el, pNum) {
 
-    //we all know what this is by now
-    const pNum = this.parentElement.id.substring(this.parentElement.id.length - 1) - 1;
-
-    pTagInps[pNum].value = this.style.getPropertyValue("--tag");
+    pTagInps[pNum].value = el.style.getPropertyValue("--tag");
     changeInputWidth(pTagInps[pNum]);
 
-    pNameInps[pNum].value = this.style.getPropertyValue("--name");
+    pNameInps[pNum].value = el.style.getPropertyValue("--name");
     changeInputWidth(pNameInps[pNum]);
 
-    changeListValue(charLists[pNum], this.style.getPropertyValue("--char"));
-    charChange(charLists[pNum]);
+    charChange(el.style.getPropertyValue("--char"), pNum);
 
-    changeListValue(skinLists[pNum], this.style.getPropertyValue("--skin"));
-    skinChange(skinLists[pNum]);
+    skinChange(el.style.getPropertyValue("--char"), el.style.getPropertyValue("--skin"), pNum)
 
-    checkCustomSkin(pNum+1);
+    pFinder.style.display = "none";
 
-    pFinders[pNum].style.display = "none";
 }
 
 
-//visual feedback to navigate the player presets menu
-function addActive(x) {
+// visual feedback to navigate menus with the keyboard
+function addActive(x, direction) {
+    
+    removeActiveClass(x);
+
+    // if true, were going up
+    if (direction) {
+
+        // increase that focus
+        currentFocus++;
+        // if end of list, cicle
+        if (currentFocus >= x.length) currentFocus = 0;
+
+        // search for the next visible entry
+        while (currentFocus <= x.length-1) {
+            if (x[currentFocus].style.display == "none") {
+                currentFocus++;
+            } else {
+                break;
+            }
+        }
+        // if we didnt find any, start from 0
+        if (currentFocus == x.length) {
+            currentFocus = 0;
+            while (currentFocus <= x.length-1) {
+                if (x[currentFocus].style.display == "none") {
+                    currentFocus++;
+                } else {
+                    break;
+                }
+            }
+        }
+        // if even then we couldnt find a visible entry, set it to invalid
+        if (currentFocus == x.length) {
+            currentFocus = -1;
+        }
+
+    } else { // same as above but inverted
+        currentFocus--;
+        if (currentFocus < 0) currentFocus = (x.length - 1);
+        while (currentFocus > -1) {
+            if (x[currentFocus].style.display == "none") {
+                currentFocus--;
+            } else {
+                break;
+            }
+        }
+        if (currentFocus == -1) {
+            currentFocus = x.length-1;
+            while (currentFocus > -1) {
+                if (x[currentFocus].style.display == "none") {
+                    currentFocus--;
+                } else {
+                    break;
+                }
+            }
+        }
+        if (currentFocus == x.length) {
+            currentFocus = -1;
+        }
+    }
+
+    // if there is a valid entry
+    if (currentFocus > -1) {
+        //add to the selected entry the active class
+        x[currentFocus].classList.add("finderEntry-active");
+        // make it scroll if it goes out of view
+        setImmediate(() => { // smooth scroll will break the focus if we dont wait a bit
+            x[currentFocus].scrollIntoView({behavior: "smooth", block: "center"});
+        });
+    }
+    
+}
+function removeActiveClass(x) {
     //clears active from all entries
     for (let i = 0; i < x.length; i++) {
         x[i].classList.remove("finderEntry-active");
-    }
-
-    //if end of list, cicle
-    if (currentFocus >= x.length) currentFocus = 0;
-    if (currentFocus < 0) currentFocus = (x.length - 1);
-
-    //add to the selected entry the active class
-    x[currentFocus].classList.add("finderEntry-active");
-}
-
-
-function checkCustomSkin(pNum) {
-
-    pNum -= 1
-
-    //get the player preset list for the current text
-    const playerList = getJson(textPath + "/Player Info/" + pNameInps[pNum].value);
-    
-    if (playerList) { //safety check
-
-        playerList.characters.forEach(char => { //for each possible character
-
-            //if the current character is on the list
-            if (char.character == charLists[pNum].selectedOptions[0].text) {
-
-                //first, check if theres a custom skin already
-                if (skinLists[pNum].selectedOptions[0].className == "playerCustom") {
-                    skinLists[pNum].remove(skinLists[pNum].selectedIndex);
-                }
-
-                const option = document.createElement('option'); //create new entry
-                option.className = "playerCustom"; //set class so the background changes
-                option.text = char.skin; //set the text of entry
-                skinLists[pNum].add(option, 0); //add the entry to the beginning of the list
-                skinLists[pNum].selectedIndex = 0; //leave it selected
-                skinChange(skinLists[pNum]); //update the image
-            }
-
-        });
-
     }
 }
 
@@ -1067,7 +1189,6 @@ function setSingles() {
         pTagInps[i].style.display = "block";
         tNameInps[i].style.display = "none";
     }
-
     for (let i = 2; i < skinLists.length; i++) {
         charLists[i].style.display = "none";
         skinDivLists[i].style.display = "none";
@@ -1196,40 +1317,17 @@ function swap() {
 
 
         //characters and skins
-        const tempP1Char = charLists[i].selectedOptions[0].text;
-        const tempP2Char = charLists[i+1].selectedOptions[0].text;
+        const tempP1Char = charSelectors[i].getElementsByClassName("charSelectorText")[0].innerHTML;
+        const tempP2Char = charSelectors[i+1].getElementsByClassName("charSelectorText")[0].innerHTML;
+        const tempP1Skin = skinSelectors[i].innerText;
+        const tempP2Skin = skinSelectors[i+1].innerText;
+        // update the suff
+        charChange(tempP2Char, i);
+        charChange(tempP1Char, i+1);
         
-        //we need to perform this check since the program would halt when reading from null
-        let p1RealSkin, p2RealSkin;
-        try {
-            p1RealSkin = skinLists[i].selectedOptions[0].text
-        } catch (error) {
-            p1RealSkin = "";
-        }
-        try {
-            p2RealSkin = skinLists[i+1].selectedOptions[0].text
-        } catch (error) {
-            p2RealSkin = "";
-        }
+        skinChange(tempP2Char, tempP2Skin, i);
+        skinChange(tempP1Char, tempP1Skin, i+1);
 
-        const tempP1Skin = p1RealSkin;
-        const tempP2Skin = p2RealSkin;
-
-        changeListValue(charLists[i], tempP2Char);
-        changeListValue(charLists[i+1], tempP1Char);
-        //the change event doesnt fire up on its own so we have to change the image ourselves
-        charChange(charLists[i]);
-        charChange(charLists[i+1]);
-
-        //same but for skins
-        changeListValue(skinLists[i], tempP2Skin);
-        changeListValue(skinLists[i+1], tempP1Skin);
-        skinChange(skinLists[i]);
-        skinChange(skinLists[i+1]);
-
-        //find out if the swapped skin is a custom one
-        checkCustomSkin(i+1);
-        checkCustomSkin(i+2);
     }    
 
     //scores
@@ -1273,33 +1371,17 @@ function clearPlayers() {
         changeInputWidth(pTagInps[i]);
 
         //reset characters to random
-        clearList(charLists[i]);
+        charChange("Random", i);
 
-    }
-
-    //reset the character lists
-    loadCharacters();
-
-    //dont forget to clear the skin list!
-    for (let i = 0; i < maxPlayers; i++) {
-        clearList(skinLists[i]);
-        skinLists[i].style.display = "none";
     }
 
     //clear player scores
     for (let i = 0; i < checks.length; i++) {
         checks[i].checked = false;
     }
+
 }
 
-//to force the list to use a specific entry
-function changeListValue(list, name) {
-    for (let i = 0; i < list.length; i++) {
-        if (list.options[i].text == name) {
-            list.selectedIndex = i;
-        }
-    }
-}
 
 //manually sets the player's score
 function setScore(score, tick1, tick2, tick3) {
@@ -1316,7 +1398,6 @@ function setScore(score, tick1, tick2, tick3) {
         }
     }
 }
-
 
 // whenever the user clicks on the force W/L checkbox
 function forceWLtoggle() {
@@ -1357,17 +1438,18 @@ function copyMatch() {
         if (pTagInps[0].value) {
             copiedText += pTagInps[0].value + " | ";
         }
-        copiedText += pNameInps[0].value + " (" + charLists[0].selectedOptions[0].text +") VS ";
+        copiedText += pNameInps[0].value + " (" +  charSelectors[0].getElementsByClassName("charSelectorText")[0].innerHTML +") VS ";
         if (pTagInps[1].value) {
             copiedText += pTagInps[1].value + " | ";
         }
-        copiedText += pNameInps[1].value + " (" + charLists[1].selectedOptions[0].text +")";
+        copiedText += pNameInps[1].value + " (" +  charSelectors[1].getElementsByClassName("charSelectorText")[0].innerHTML +")";
     } else { //for team matches
         copiedText += tNameInps[0].value + " VS " + tNameInps[1].value;
     }
 
     //send the string to the user's clipboard
     navigator.clipboard.writeText(copiedText);
+
 }
 
 // called whenever the used clicks on a settings checkbox
@@ -1392,17 +1474,14 @@ function saveGUISettings() {
 //time to write it down
 function writeScoreboard() {
 
-    //this is what's going to be in the json file
+    //this is what's going to be sent to the browsers
     const scoreboardJson = {
         player: [], //more lines will be added below
         teamName: [
             tNameInps[0].value,
             tNameInps[1].value
         ],
-        color: [
-            colorL,
-            colorR
-        ],
+        color: [],
         score: [
             checkScore(p1Win1, p1Win2, p1Win3),
             checkScore(p2Win1, p2Win2, p2Win3)
@@ -1419,9 +1498,9 @@ function writeScoreboard() {
         allowIntro: document.getElementById('allowIntro').checked,
         forceHD: document.getElementById('forceHD').checked
     };
+
     //add the player's info to the player section of the json
     for (let i = 0; i < maxPlayers; i++) {
-
         //we need to perform this check since the program would halt when reading from null
         let realSkin;
         try {
@@ -1430,6 +1509,7 @@ function writeScoreboard() {
             realSkin = "";
         }
 
+        // finally, add it to the main json
         scoreboardJson.player.push({
             name: pNameInps[i].value,
             tag: pTagInps[i].value,
@@ -1437,6 +1517,16 @@ function writeScoreboard() {
             skin: realSkin,
         })
     }
+
+    // stuff that needs to be done for both sides
+    for (let i = 0; i < 2; i++) {
+        // add color info
+        scoreboardJson.color.push({
+            name: currentColors[i].name,
+            hex: currentColors[i].hex
+        })
+    }
+
     //do the same for the casters
     for (let i = 0; i < casters.length; i++) {
         scoreboardJson.caster.push({
@@ -1446,9 +1536,9 @@ function writeScoreboard() {
         })
     }
 
-    //now convert it to a text we can save intro a file
-    const data = JSON.stringify(scoreboardJson, null, 2);
-    fs.writeFileSync(textPath + "/ScoreboardInfo.json", data);
+    // now convert it into something readable to send to OBS
+    scData = JSON.stringify(scoreboardJson, null, 2);
+    sendData();
 
 
     //simple .txt files
@@ -1471,4 +1561,13 @@ function writeScoreboard() {
         fs.writeFileSync(textPath + "/Simple Texts/Caster "+(i+1)+" Twitch.txt", document.getElementById('cTwitch'+(i+1)).value);    
     }
 
+}
+
+// when a new browser connects
+ipc.on('requestData', () => {
+    sendData();
+})
+// every time we need to send data to them browsers
+function sendData() {
+    ipc.send('sendData', scData);
 }

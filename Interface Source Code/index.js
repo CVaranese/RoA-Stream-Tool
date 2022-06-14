@@ -1,13 +1,16 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const fs = require('fs')
 const path = require('path')
-const { ipcMain } = require('electron')
+const WebSocket = require('ws')
 
-let failed = false;
+
+// start a web socket server on boot
+const server = new WebSocket.Server({ port: 8080 });
+let sockets = [];
 
 function createWindow() {
 
-    let resourcesPath, guiWidth, guiHeight;
+    let resourcesPath, guiWidth, guiHeight, failed;
 
     try {
 
@@ -18,6 +21,8 @@ function createWindow() {
         } else { // if on Linux
             resourcesPath = path.resolve('.', 'Resources')
         }
+        // if using npm/yarn start
+        /* resourcesPath = path.resolve('..', 'Stream Tool', 'Resources') */
         
         const guiSettings = JSON.parse(fs.readFileSync(resourcesPath + "/Texts/GUI Settings.json"))
         guiWidth = guiSettings.guiWidth
@@ -26,7 +31,7 @@ function createWindow() {
             guiHeight = guiHeight + 29 // windows why cant you be normal
         }
 
-    } catch (e) {
+    } catch (e) { // if the settings file cant be found
         failed = true
         guiWidth = 600
         guiHeight = 300
@@ -74,6 +79,7 @@ function createWindow() {
         }
     })
 
+    // always on top toggle from the GUI
     ipcMain.on('alwaysOnTop', (event, arg) => {
         if (arg) {
             win.setAlwaysOnTop(true)
@@ -81,7 +87,6 @@ function createWindow() {
             win.setAlwaysOnTop(false)
         }
     })
-
 }
 
 

@@ -1,4 +1,1 @@
-<<<<<<< HEAD
 ewrer
-=======
->>>>>>> 8bba100... Project m Character Files
